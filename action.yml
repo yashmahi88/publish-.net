@@ -72,6 +72,7 @@ runs:
 
         echo "PACKAGE_ID: $PACKAGE_ID"
         echo "PACKAGE_VERSION: $PACKAGE_VERSION"
+      shell: bash
 
     - name: Pack Project
       run: |
@@ -81,6 +82,7 @@ runs:
           /p:PackageVersion=$PACKAGE_VERSION
         ARTIFACT_PATH="./bin/Release/${PACKAGE_ID}.${PACKAGE_VERSION}.nupkg"
         echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> $GITHUB_ENV
+      shell: bash
 
     - name: Upload Package as Artifact
       uses: actions/upload-artifact@v3
