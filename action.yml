@@ -1,0 +1,89 @@
+name: 'Publish .NET Package'
+description: 'Builds, restores dependencies, and publishes a .NET package with dynamic versioning based on the Git reference.'
+author: 'Yash Mahindrakar'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  dotnet-version:
+    description: 'The version of the .NET SDK to use'
+    required: true
+    default: '8.0.x'
+
+outputs:
+  package-id:
+    description: 'The ID of the generated package'
+  package-version:
+    description: 'The version of the generated package'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+
+    - name: Restore Dependencies
+      run: dotnet restore
+      shell: bash
+
+    - name: Build Project
+      run: dotnet build --configuration Release
+      shell: bash
+
+    - name: Set Package Name and Version
+      id: set_name
+      run: |
+        echo "Checking GITHUB_REF: $GITHUB_REF"
+        FOLDER_NAME="git-development"
+
+        if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+
+          git fetch origin master
+          MASTER_COMMIT=$(git rev-parse origin/master)
+
+          TAG_COMMIT=$(git rev-parse "${GITHUB_REF}")
+
+          if [[ "$TAG_COMMIT" == "$MASTER_COMMIT" ]]; then
+            export PACKAGE_ID="nexus-git-${TAG_NAME}"
+            export PACKAGE_VERSION="${TAG_NAME}"
+          else
+            echo "Error: Tags must be created on the master branch."
+            exit 1
+          fi
+        elif [[ "${GITHUB_REF}" == "refs/heads/development" ]]; then
+          export PACKAGE_ID="${FOLDER_NAME}.nexus-git"
+          export PACKAGE_VERSION="${GITHUB_RUN_ID}"
+        elif [[ "${GITHUB_REF}" == "refs/heads/release" ]]; then
+          COMMIT_ID=$(echo "${GITHUB_SHA}" | cut -c1-6)
+          export PACKAGE_ID="nexus-git-release-${COMMIT_ID}"
+          export PACKAGE_VERSION="release-${COMMIT_ID}"
+        else
+          echo "Error: Unsupported branch."
+          exit 1
+        fi
+
+        echo "PACKAGE_ID=${PACKAGE_ID}" >> $GITHUB_ENV
+        echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> $GITHUB_ENV
+
+        echo "PACKAGE_ID: $PACKAGE_ID"
+        echo "PACKAGE_VERSION: $PACKAGE_VERSION"
+
+    - name: Pack Project
+      run: |
+        echo "Packaging with version: $PACKAGE_VERSION"
+        dotnet pack --configuration Release --output ./bin/Release \
+          /p:CustomPackageId=$PACKAGE_ID \
+          /p:PackageVersion=$PACKAGE_VERSION
+        ARTIFACT_PATH="./bin/Release/${PACKAGE_ID}.${PACKAGE_VERSION}.nupkg"
+        echo "ARTIFACT_PATH=${ARTIFACT_PATH}" >> $GITHUB_ENV
+
+    - name: Upload Package as Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: nuget-package
+        path: ${{ env.ARTIFACT_PATH }}
